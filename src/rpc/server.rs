@@ -94,6 +94,9 @@ pub async fn start() -> Result<(), anyhow::Error> {
             Default::default(),
         );
 
-        let _ = RpcSystem::new(Box::new(network), Some(client.clone().client)).await?;
+        if let Err(e) = RpcSystem::new(Box::new(network), Some(client.clone().client)).await {
+            log::error!("{:?}", e);
+            continue;
+        };
     }
 }
