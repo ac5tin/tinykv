@@ -5,8 +5,11 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+mod db;
+mod entity;
 mod kv;
 mod rpc;
+mod utils;
 
 pub mod tinykv_capnp {
     include!(concat!(env!("OUT_DIR"), "/tinykv_capnp.rs"));

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::RwLock};
 use actix::prelude::*;
 use anyhow::anyhow;
 
-#[derive(Message)]
+#[derive(Message, Clone)]
 #[rtype(result = "Result<(), anyhow::Error>")]
 pub struct Dataset {
     pub key: String,

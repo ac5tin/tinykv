@@ -1,4 +1,4 @@
-use actix::{Addr, SyncArbiter};
+use actix::{Actor, Addr, Recipient, SyncArbiter};
 use capnp::capability::Promise;
 use futures_util::io::AsyncReadExt;
 use std::net::TcpListener;
@@ -6,12 +6,14 @@ use std::net::TcpListener;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty::VatNetwork, RpcSystem};
 
 use crate::{
+    db,
     kv::{self, Dataset, Key, KvStore},
     tinykv_capnp,
 };
 
 struct TinyKVServer {
     kv: Addr<KvStore>,
+    rcv: Vec<Recipient<Dataset>>,
 }
 
 impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
@@ -27,15 +29,15 @@ impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
         let key = req.get_key().unwrap();
         let value = req.get_value().unwrap();
 
-        if self
-            .kv
-            .try_send(Dataset {
-                key: key.to_owned(),
-                data: value.to_vec(),
-            })
-            .is_err()
-        {
-            return Promise::err(capnp::Error::failed("failed to send message".to_owned()));
+        let ds = Dataset {
+            key: key.to_owned(),
+            data: value.to_vec(),
+        };
+
+        for r in self.rcv.iter() {
+            if r.try_send(ds.clone()).is_err() {
+                return Promise::err(capnp::Error::failed("failed to send message".to_owned()));
+            };
         }
 
         // return values
@@ -72,9 +74,18 @@ impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
 }
 
 pub async fn start() -> Result<(), anyhow::Error> {
+    // init db
+    let conn = db::conn::get_conn().await?;
     let tkv = SyncArbiter::start(1, move || kv::KvStore::new());
 
-    let client: tinykv_capnp::tiny_k_v::Client = capnp_rpc::new_client(TinyKVServer { kv: tkv });
+    let recipients: Vec<Recipient<Dataset>> = vec![
+        tkv.clone().recipient(),
+        db::DB::new(conn).start().recipient(),
+    ];
+    let client: tinykv_capnp::tiny_k_v::Client = capnp_rpc::new_client(TinyKVServer {
+        kv: tkv,
+        rcv: recipients,
+    });
 
     let addr = "0.0.0.0:8321";
     let listener = TcpListener::bind(addr)?;
