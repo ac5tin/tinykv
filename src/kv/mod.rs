@@ -66,12 +66,13 @@ impl Handler<Key> for KvStore {
                     log::warn!("Cache miss");
                     let db = with_ctx(|actor: &mut Self, _| actor.db.clone());
                     if let Ok(Ok(rec)) = db.send(msg.clone()).await {
-                        log::trace!("Cache miss, but data found in database");
+                        log::debug!("Cache miss, but data found in database");
                         with_ctx(|actor: &mut Self, _| actor.cache.put(msg.0, rec.clone()));
-                        log::trace!("Cached miss data");
+                        log::debug!("Cached missing data");
                         Ok(rec)
                     } else {
-                        Err(anyhow!("Key not found in cache"))
+                        log::error!("Key not found in database");
+                        Err(anyhow!("Key not found in database"))
                     }
                 }
             }
