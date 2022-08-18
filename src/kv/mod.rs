@@ -45,7 +45,10 @@ impl Handler<Dataset> for KvStore {
                 // acquire lock
                 if let Ok(mut wlock) = d.write() {
                     *wlock = msg.data.clone();
-                    self.db.do_send(msg.to_owned());
+                    if let Err(err) = self.db.try_send(msg.to_owned()) {
+                        log::error!("Failed to persist data in database, Err:{:?}", err);
+                        return Err(anyhow!(err));
+                    };
                     Ok(())
                 } else {
                     Err(anyhow!("failed to acquire write lock"))
