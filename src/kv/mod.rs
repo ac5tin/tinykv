@@ -13,7 +13,7 @@ pub struct Dataset {
     pub data: Vec<u8>,
 }
 
-#[derive(Message)]
+#[derive(Message, Clone)]
 #[rtype(result = "Result<Vec<u8>, anyhow::Error>")]
 pub struct Key(pub String);
 
@@ -63,9 +63,12 @@ impl Handler<Key> for KvStore {
                     Ok(data)
                 }
                 None => {
-                    log::debug!("Cache miss");
+                    log::warn!("Cache miss");
                     let db = with_ctx(|actor: &mut Self, _| actor.db.clone());
-                    if let Ok(Ok(rec)) = db.send(msg).await {
+                    if let Ok(Ok(rec)) = db.send(msg.clone()).await {
+                        log::trace!("Cache miss, but data found in database");
+                        with_ctx(|actor: &mut Self, _| actor.cache.put(msg.0, rec.clone()));
+                        log::trace!("Cached miss data");
                         Ok(rec)
                     } else {
                         Err(anyhow!("Key not found in cache"))
