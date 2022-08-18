@@ -2,6 +2,9 @@ use std::{collections::HashMap, sync::RwLock};
 
 use actix::prelude::*;
 use anyhow::anyhow;
+use sea_orm::DatabaseConnection;
+
+use crate::db::DB;
 
 #[derive(Message, Clone)]
 #[rtype(result = "Result<(), anyhow::Error>")]
@@ -16,18 +19,20 @@ pub struct Key(pub String);
 
 pub struct KvStore {
     data: HashMap<String, RwLock<Vec<u8>>>,
+    db: Addr<DB>,
 }
 
 impl KvStore {
-    pub fn new() -> KvStore {
+    pub fn new(conn: DatabaseConnection) -> KvStore {
         KvStore {
             data: HashMap::new(),
+            db: DB::new(conn).start(),
         }
     }
 }
 
 impl Actor for KvStore {
-    type Context = SyncContext<Self>;
+    type Context = Context<Self>;
 }
 
 impl Handler<Dataset> for KvStore {
@@ -39,7 +44,8 @@ impl Handler<Dataset> for KvStore {
                 // update data behind rwlock
                 // acquire lock
                 if let Ok(mut wlock) = d.write() {
-                    *wlock = msg.data;
+                    *wlock = msg.data.clone();
+                    self.db.do_send(msg.to_owned());
                     Ok(())
                 } else {
                     Err(anyhow!("failed to acquire write lock"))

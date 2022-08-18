@@ -1,4 +1,4 @@
-use actix::{Actor, Addr, Recipient, SyncArbiter};
+use actix::{Actor, Addr};
 use capnp::capability::Promise;
 use futures_util::io::AsyncReadExt;
 use std::net::TcpListener;
@@ -13,7 +13,6 @@ use crate::{
 
 struct TinyKVServer {
     kv: Addr<KvStore>,
-    rcv: Vec<Recipient<Dataset>>,
 }
 
 impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
@@ -34,11 +33,9 @@ impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
             data: value.to_vec(),
         };
 
-        for r in self.rcv.iter() {
-            if r.try_send(ds.clone()).is_err() {
-                return Promise::err(capnp::Error::failed("failed to send message".to_owned()));
-            };
-        }
+        if self.kv.try_send(ds.clone()).is_err() {
+            return Promise::err(capnp::Error::failed("failed to send message".to_owned()));
+        };
 
         // return values
         results.get().set_key(key);
@@ -66,6 +63,8 @@ impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
                 results.get().set_key(&kkey);
                 results.get().set_value(&data.to_vec());
             } else {
+                // data doesnt exist, find from db
+                // set in cache
                 return Err(capnp::Error::failed("failed to get data".to_owned()));
             };
             Ok(())
@@ -76,16 +75,9 @@ impl tinykv_capnp::tiny_k_v::Server for TinyKVServer {
 pub async fn start() -> Result<(), anyhow::Error> {
     // init db
     let conn = db::conn::get_conn().await?;
-    let tkv = SyncArbiter::start(1, move || kv::KvStore::new());
+    let tkv = kv::KvStore::new(conn.to_owned()).start();
 
-    let recipients: Vec<Recipient<Dataset>> = vec![
-        tkv.clone().recipient(),
-        db::DB::new(conn).start().recipient(),
-    ];
-    let client: tinykv_capnp::tiny_k_v::Client = capnp_rpc::new_client(TinyKVServer {
-        kv: tkv,
-        rcv: recipients,
-    });
+    let client: tinykv_capnp::tiny_k_v::Client = capnp_rpc::new_client(TinyKVServer { kv: tkv });
 
     let addr = "0.0.0.0:8321";
     let listener = TcpListener::bind(addr)?;
