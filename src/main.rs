@@ -17,7 +17,11 @@ pub mod tinykv_capnp {
 
 #[actix::main]
 async fn main() -> Result<(), anyhow::Error> {
-    env_logger::init();
+    //env_logger::init();
+    env_logger::Builder::new()
+        .parse_default_env()
+        .filter_module("sqlx::query", log::LevelFilter::Off)
+        .init();
     rpc::server::start().await?;
     Ok(())
 }
