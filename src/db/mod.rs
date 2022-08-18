@@ -35,8 +35,16 @@ impl Handler<Dataset> for DB {
         async move {
             let conn = with_ctx(|actor: &mut Self, _| actor.conn.clone());
             match d.insert(&conn).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!(e)),
+                Ok(_) => {
+                    log::debug!("Insert data to database successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    if e != sea_orm::error::DbErr::Exec("error returned from database: (code: 2067) UNIQUE constraint failed: data.key".to_owned()) {
+                        log::error!("Failed to insert data to database, Err:{:?}", e);
+                    };
+                    Err(anyhow!(e))
+                }
             }
         }
         .interop_actor_boxed(self)
