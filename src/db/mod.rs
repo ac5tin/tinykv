@@ -2,9 +2,9 @@ use actix::prelude::*;
 
 use actix_interop::{with_ctx, FutureInterop};
 use anyhow::anyhow;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
-use crate::{entity::data, kv::Dataset};
+use crate::{entity::data, kv::Dataset, kv::Key};
 
 pub mod conn;
 
@@ -36,6 +36,26 @@ impl Handler<Dataset> for DB {
             let conn = with_ctx(|actor: &mut Self, _| actor.conn.clone());
             match d.insert(&conn).await {
                 Ok(_) => Ok(()),
+                Err(e) => Err(anyhow!(e)),
+            }
+        }
+        .interop_actor_boxed(self)
+    }
+}
+
+impl Handler<Key> for DB {
+    type Result = ResponseActFuture<Self, Result<Vec<u8>, anyhow::Error>>;
+
+    fn handle(&mut self, msg: Key, _: &mut Context<Self>) -> Self::Result {
+        async move {
+            let conn = with_ctx(|actor: &mut Self, _| actor.conn.clone());
+            match data::Entity::find()
+                .filter(data::Column::Key.eq(msg.0))
+                .one(&conn)
+                .await
+            {
+                Ok(Some(d)) => Ok(d.value),
+                Ok(None) => Err(anyhow!("Key not found in database")),
                 Err(e) => Err(anyhow!(e)),
             }
         }

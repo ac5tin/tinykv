@@ -26,6 +26,7 @@ sea-orm = { version = "0.9", features = [
 ] }
 migration = { path = "migration" }
 once_cell = "1.13"
+lru = "0.7"
 
 [build-dependencies]
 capnpc = "0.14"
