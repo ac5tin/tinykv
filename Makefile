@@ -15,6 +15,9 @@ run:
 @debug/run:
 	RUST_LOG=debug cargo run
 
+@trace/run:
+	RUST_LOG=trace cargo run
+
 @build/podman:
 	@echo "Using podman to build image"
 	podman build --arch amd64 -t ${IMAGE_NAME} .
