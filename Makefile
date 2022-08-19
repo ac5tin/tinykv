@@ -12,6 +12,9 @@ test:
 run:
 	RUST_LOG=info cargo run
 
+build:
+	cargo build --release
+
 @debug/run:
 	RUST_LOG=debug cargo run
 

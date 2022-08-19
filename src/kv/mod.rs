@@ -3,6 +3,8 @@ use actix_interop::{with_ctx, FutureInterop};
 use anyhow::anyhow;
 use lru::LruCache;
 use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::db::DB;
 
@@ -18,14 +20,14 @@ pub struct Dataset {
 pub struct Key(pub String);
 
 pub struct KvStore {
-    cache: LruCache<String, Vec<u8>>,
+    cache: Arc<RwLock<LruCache<String, Vec<u8>>>>,
     db: Addr<DB>,
 }
 
 impl KvStore {
     pub fn new(conn: DatabaseConnection) -> KvStore {
         KvStore {
-            cache: LruCache::new(100),
+            cache: Arc::new(RwLock::new(LruCache::new(100))),
             db: DB::new(conn).start(),
         }
     }
@@ -36,15 +38,23 @@ impl Actor for KvStore {
 }
 
 impl Handler<Dataset> for KvStore {
-    type Result = Result<(), anyhow::Error>;
+    type Result = ResponseActFuture<Self, Result<(), anyhow::Error>>;
 
     fn handle(&mut self, msg: Dataset, _: &mut Self::Context) -> Self::Result {
-        if let Err(err) = self.db.try_send(msg.to_owned()) {
-            log::error!("Failed to persist data in database, Err:{:?}", err);
-            return Err(anyhow!(err));
-        };
-        self.cache.put(msg.key, msg.data);
-        Ok(())
+        let cache = self.cache.clone();
+        async move {
+            let conn = with_ctx(|actor: &mut Self, _| actor.db.clone());
+            if let Err(err) = conn.send(msg.to_owned()).await {
+                log::error!("Failed to persist data in database, Err:{:?}", err);
+                return Err(anyhow!(err));
+            };
+
+            let mut writer = cache.write().await;
+            writer.put(msg.key, msg.data);
+            Ok(())
+        }
+        .interop_actor_boxed(self)
+        //self.cache.put(msg.key, msg.data);
     }
 }
 
@@ -52,11 +62,15 @@ impl Handler<Key> for KvStore {
     type Result = ResponseActFuture<Self, Result<Vec<u8>, anyhow::Error>>;
 
     fn handle(&mut self, msg: Key, _: &mut Self::Context) -> Self::Result {
+        let cache = self.cache.clone();
+
         async move {
-            let d = with_ctx(|actor: &mut Self, _| match actor.cache.get(&msg.0) {
+            let mut c = cache.write().await;
+
+            let d = match c.get(&msg.0) {
                 Some(data) => Some(data.to_owned()),
                 None => None,
-            });
+            };
             match d {
                 Some(data) => {
                     log::debug!("Cache hit");
@@ -67,7 +81,7 @@ impl Handler<Key> for KvStore {
                     let db = with_ctx(|actor: &mut Self, _| actor.db.clone());
                     if let Ok(Ok(rec)) = db.send(msg.clone()).await {
                         log::debug!("Cache miss, but data found in database");
-                        with_ctx(|actor: &mut Self, _| actor.cache.put(msg.0, rec.clone()));
+                        c.put(msg.0, rec.clone());
                         log::debug!("Cached missing data");
                         Ok(rec)
                     } else {
