@@ -86,6 +86,7 @@ pub async fn start() -> Result<(), anyhow::Error> {
     loop {
         let (stream, _) = listener.accept().await?;
         let stream = tokio::net::TcpStream::from(stream);
+        stream.set_nodelay(true)?;
         let (read_half, write_half) =
             tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
 
