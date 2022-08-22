@@ -1,6 +1,7 @@
 use actix::{Actor, Addr};
 use capnp::capability::Promise;
 use futures_util::io::AsyncReadExt;
+use futures_util::FutureExt;
 use tokio::net::TcpListener;
 
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty::VatNetwork, RpcSystem};
@@ -97,9 +98,7 @@ pub async fn start() -> Result<(), anyhow::Error> {
             Default::default(),
         );
 
-        if let Err(e) = RpcSystem::new(Box::new(network), Some(client.clone().client)).await {
-            log::error!("{:?}", e);
-            continue;
-        };
+        let rpc_system = RpcSystem::new(Box::new(network), Some(client.clone().client));
+        tokio::task::spawn_local(Box::pin(rpc_system.map(|_| ()))).await?;
     }
 }
