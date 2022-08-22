@@ -1,7 +1,7 @@
 use actix::{Actor, Addr};
 use capnp::capability::Promise;
 use futures_util::io::AsyncReadExt;
-use std::net::TcpListener;
+use tokio::net::TcpListener;
 
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty::VatNetwork, RpcSystem};
 
@@ -80,13 +80,12 @@ pub async fn start() -> Result<(), anyhow::Error> {
     let client: tinykv_capnp::tiny_k_v::Client = capnp_rpc::new_client(TinyKVServer { kv: tkv });
 
     let addr = "0.0.0.0:8321";
-    let listener = TcpListener::bind(addr)?;
+    let listener = TcpListener::bind(addr).await?;
     log::info!("Listening on {}", addr);
 
     loop {
-        let (stream, _) = listener.accept()?;
-        stream.set_nonblocking(true)?;
-        let stream = tokio::net::TcpStream::from_std(stream)?;
+        let (stream, _) = listener.accept().await?;
+        let stream = tokio::net::TcpStream::from(stream);
         let (read_half, write_half) =
             tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
 
